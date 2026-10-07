@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"go.uber.org/zap/zapcore"
-
-	"github.com/llingr/anvil"
 )
 
 // Config is the example's every setting
@@ -24,23 +22,12 @@ func (c Config) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	return nil
 }
 
-type fixedConfig struct {
-	loaded func(ctx context.Context, config Config)
-}
+// fixedConfig is a config provider whose settings are written here rather than read
+type fixedConfig struct{}
 
-// newFixedConfig is a config provider whose settings are written here rather than read, calling
-// loaded with them as anvil-koanf's conf.OnLoaded would
-func newFixedConfig(loaded func(ctx context.Context, config Config)) anvil.ConfigProvider[Config] {
-	return &fixedConfig{
-		loaded: loaded,
-	}
-}
-
-func (f *fixedConfig) Load(ctx context.Context) (Config, error) {
-	config := Config{
+func (fixedConfig) Load(context.Context) (Config, error) {
+	return Config{
 		Port:              8080,
 		ReadHeaderTimeout: 5 * time.Second,
-	}
-	f.loaded(ctx, config)
-	return config, nil
+	}, nil
 }

@@ -36,8 +36,7 @@ func main() {
 	}
 
 	loggerProvider := zaplog.New(loggerConfig)
-	configProvider := newFixedConfig(zaplog.LogConfig[Config](loggerProvider.Logger()))
-	exitCode := anvil.Run(context.Background(), "anvil-zap-example", configProvider, loggerProvider, wire)
+	exitCode := anvil.Run(context.Background(), "anvil-zap-example", fixedConfig{}, loggerProvider, wire)
 	os.Exit(exitCode)
 }
 
