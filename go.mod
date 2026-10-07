@@ -3,7 +3,7 @@ module github.com/llingr/anvil-zap
 go 1.25
 
 require (
-	github.com/llingr/anvil v0.0.5
+	github.com/llingr/anvil v0.0.7
 	go.uber.org/zap v1.27.1
 )
 

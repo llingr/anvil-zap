@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 The anvil Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package zaplog is an anvil logger provider backed by zap: New builds the logger from a zap.Config,
-// and Wrap uses one the service built itself.
+// Package zaplog is an anvil.LoggerProvider backed by zap
 package zaplog
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	"go.uber.org/zap"
@@ -19,8 +19,11 @@ import (
 
 // loggerProvider for anvil.LoggerProvider backed by *zap.Logger
 type loggerProvider struct {
-	logger *zap.Logger
+	logger          *zap.Logger // the application's, returned unchanged
+	lifecycleLogger *zap.Logger // named "anvil-lifecycle"
 }
+
+var _ anvil.ConfigLogger = (*loggerProvider)(nil)
 
 // New builds a *zap.Logger wrapped in anvil.LoggerProvider
 func New(cfg zap.Config) anvil.LoggerProvider[*zap.Logger] {
@@ -36,8 +39,13 @@ func Wrap(logger *zap.Logger) anvil.LoggerProvider[*zap.Logger] {
 	if logger == nil {
 		panic("zaplog: invalid (nil) logger")
 	}
+	lifecycleLogger := logger.
+		Named("anvil-lifecycle").
+		WithOptions(zap.AddCallerSkip(1))
+
 	return &loggerProvider{
-		logger: logger,
+		logger:          logger,
+		lifecycleLogger: lifecycleLogger,
 	}
 }
 
@@ -48,19 +56,46 @@ func (l *loggerProvider) Logger() *zap.Logger {
 
 // LifecycleInfo logs anvil's lifecycle msg
 func (l *loggerProvider) LifecycleInfo(_ context.Context, msg string) {
-	// log caller's line, not this one
-	l.logger.WithOptions(zap.AddCallerSkip(1)).Info(msg)
+	l.lifecycleLogger.Info(msg)
 }
 
 // LifecycleError logs anvil's lifecycle error along with an "error" field
 func (l *loggerProvider) LifecycleError(_ context.Context, msg string, err error) {
-	// log caller's line, not this one
-	l.logger.WithOptions(zap.AddCallerSkip(1)).Error(msg, zap.Error(err))
+	l.lifecycleLogger.Error(msg, zap.Error(err))
 }
 
 // Flush syncs zap's buffered lines
 func (l *loggerProvider) Flush() {
 	_ = l.logger.Sync() // fails with "inappropriate ioctl for device" when stderr is a terminal
+}
+
+// LogConfig logs msg and includes config only
+// when it implements zapcore.ObjectMarshaler.
+func (l *loggerProvider) LogConfig(_ context.Context, msg string, config any) {
+	if isNil(config) {
+		l.lifecycleLogger.Info(msg)
+		return
+	}
+
+	switch cfg := config.(type) {
+	case zapcore.ObjectMarshaler:
+		l.lifecycleLogger.Info(msg, zap.Object("config", cfg))
+	default:
+		l.lifecycleLogger.Info(msg)
+	}
+}
+
+func isNil(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return reflected.IsNil()
+	default:
+		return false
+	}
 }
 
 // DefaultConfig is zap's production config to stderr, info and above, with a UTC millisecond
@@ -89,12 +124,4 @@ func encodeTimeUTC(t time.Time, encoder zapcore.PrimitiveArrayEncoder) {
 func stderrIsTerminal() bool {
 	info, err := os.Stderr.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-// LogConfig returns a config provider's loaded callback, such as anvil-koanf's conf.OnLoaded takes,
-// logging the config through logger and the config's own MarshalLogObject
-func LogConfig[C zapcore.ObjectMarshaler](logger *zap.Logger) func(ctx context.Context, config C) {
-	return func(_ context.Context, config C) {
-		logger.Info("configuration", zap.Object("config", config))
-	}
 }

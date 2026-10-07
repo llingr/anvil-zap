@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +43,41 @@ func TestWrapCallerIsAnvilsCallSite(t *testing.T) {
 	}
 }
 
+// anvil's lines are named "anvil-lifecycle", while the application's own lines through Logger() stay
+// unnamed
+func TestLifecycleLinesAloneAreNamed(t *testing.T) {
+	core, logs := observer.New(zapcore.InfoLevel)
+	provider := zaplog.Wrap(zap.New(core))
+	provider.Logger().Info("order placed")
+	provider.LifecycleInfo(context.Background(), "starting")
+	provider.LifecycleError(context.Background(), "failed", errors.New("boom"))
+	provider.Logger().Info("order shipped")
+	want := map[string]string{
+		"order placed":  "",
+		"starting":      "anvil-lifecycle",
+		"failed":        "anvil-lifecycle",
+		"order shipped": "",
+	}
+	for _, entry := range logs.All() {
+		if entry.LoggerName != want[entry.Message] {
+			t.Errorf("%q named %q, want %q", entry.Message, entry.LoggerName, want[entry.Message])
+		}
+	}
+	if logs.Len() != len(want) {
+		t.Fatalf("%d lines, want %d", logs.Len(), len(want))
+	}
+}
+
+// A logger the application named keeps its name, with anvil's lines under it
+func TestLifecycleNameNestsUnderTheApplications(t *testing.T) {
+	core, logs := observer.New(zapcore.InfoLevel)
+	zaplog.Wrap(zap.New(core).Named("orders")).LifecycleInfo(context.Background(), "starting")
+	entries := logs.All()
+	if len(entries) != 1 || entries[0].LoggerName != "orders.anvil-lifecycle" {
+		t.Fatalf("lines %v, want one named orders.anvil-lifecycle", entries)
+	}
+}
+
 // Wrap given nil panics at construction
 func TestWrapNilPanics(t *testing.T) {
 	defer func() {
@@ -52,36 +86,6 @@ func TestWrapNilPanics(t *testing.T) {
 		}
 	}()
 	zaplog.Wrap(nil)
-}
-
-type secretConfig struct {
-	Port     int
-	Password string
-}
-
-func (s secretConfig) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
-	encoder.AddInt("port", s.Port)
-	return nil
-}
-
-// LogConfig logs only what the config's MarshalLogObject names, so the password never appears
-func TestLogConfigUsesMarshalLogObject(t *testing.T) {
-	core, logs := observer.New(zapcore.InfoLevel)
-	zaplog.LogConfig[secretConfig](zap.New(core))(context.Background(), secretConfig{
-		Port:     8080,
-		Password: "hunter2",
-	})
-	entries := logs.All()
-	if len(entries) != 1 {
-		t.Fatalf("%d lines, want 1", len(entries))
-	}
-	logged := entries[0].ContextMap()["config"]
-	want := map[string]any{
-		"port": 8080,
-	}
-	if !reflect.DeepEqual(logged, want) {
-		t.Fatalf("logged %#v, want port alone", logged)
-	}
 }
 
 // New builds a working logger from the config: here the default one, writing JSON to a file
@@ -97,7 +101,7 @@ func TestNewBuildsTheConfiguredLogger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(written), `"msg":"starting orders"`) {
+	if !strings.Contains(string(written), `"logger":"anvil-lifecycle","msg":"starting orders"`) {
 		t.Fatalf("wrote %q, want the lifecycle line", written)
 	}
 }
