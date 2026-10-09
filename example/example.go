@@ -10,7 +10,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -20,10 +19,8 @@ import (
 
 	"github.com/llingr/anvil"
 	"github.com/llingr/anvil-zap/zaplog"
-	"github.com/llingr/anvil/shutdown"
 )
 
-// Shell keeps the two type parameters out of every function that takes the shell
 type Shell = anvil.Shell[Config, *zap.Logger]
 
 func main() {
@@ -40,7 +37,7 @@ func main() {
 	os.Exit(exitCode)
 }
 
-// wire serves HTTP on the configured port, shut down in Ingress
+// wire serves HTTP on the configured port, stopped by the server's own Shutdown
 func wire(ctx context.Context, shell Shell) error {
 	logger := shell.Logger()
 	config := shell.Config()
@@ -54,13 +51,9 @@ func wire(ctx context.Context, shell Shell) error {
 		}),
 		ReadHeaderTimeout: config.ReadHeaderTimeout,
 	}
-	shell.Go(shutdown.Ingress, "http server", func(context.Context) error {
-		if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
+	shell.AddShutdownGroup(server).Go(func(context.Context) error {
+		return server.Serve(listener)
 	})
 	logger.Info("serving", zap.String("address", listener.Addr().String()))
-	shell.RegisterShutdownHandler(shutdown.Ingress, "http shutdown", server.Shutdown)
 	return nil
 }
