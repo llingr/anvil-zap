@@ -1,7 +1,7 @@
 # anvil-zap
 
-An [anvil](https://github.com/llingr/anvil) logger provider for [zap](https://github.com/uber-go/zap):
-anvil's lifecycle lines go through zap, and `shell.Logger()` is the `*zap.Logger` the service uses.
+An [anvil](https://github.com/llingr/anvil) logger provider backed by [zap](https://github.com/uber-go/zap):
+anvil's lifecycle logs go through zap, and `shell.Logger()` is the `*zap.Logger` a service uses.
 
 ## Getting Started
 
