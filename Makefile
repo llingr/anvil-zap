@@ -1,3 +1,6 @@
+# Built with a Go at least as new as go.mod's go directive, which it refuses otherwise
+GOLANGCI_LINT_VERSION := v2.15.0
+
 default: build test
 
 all: build test lint mutation
@@ -12,7 +15,8 @@ test:
 
 # same image and version as the CI lint job, nothing installed on the host
 lint:
-	docker run --rm -v "$(CURDIR)":/app -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...
+	docker run --rm -v "$(CURDIR)":/app -w /app \
+		golangci/golangci-lint:$(GOLANGCI_LINT_VERSION) golangci-lint run ./...
 
 mutation:
 	gremlins unleash --coverpkg=./zaplog/... --workers 2 \
